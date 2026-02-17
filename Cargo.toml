@@ -1,0 +1,10 @@
+[package]
+name = "phosphor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ratatui = "0.30"
+nucleo-matcher = "0.3"
+walkdir = "2"
+dirs = "6"
