@@ -9,9 +9,10 @@ Navigates directories and integrates with your shell's `cd` — select a directo
 - vim-style key bindings (`hjkl`, `g`/`G`)
 - Real-time fuzzy search with `nucleo`
 - Shows hidden files by default (toggle with `.`)
-- Opens files in vim (`l` or `Enter` on a file)
+- Opens files in an embedded vim pane (`l` or `Enter` on a file) — you can keep navigating on the left while editing on the right
+- Toggle focus between the browser and vim with `Ctrl-Space`
 - Shell `cd` integration — select a directory to change to it
-- k9s-inspired dark navy and cyan colour scheme
+- Phosphor-green CRT colour scheme
 
 ## Installation
 
@@ -67,15 +68,18 @@ Then run `p` (or `p /some/path`) from your terminal.
 |-----|--------|
 | `j` / `↓` | Move down |
 | `k` / `↑` | Move up |
-| `l` / `→` / `Enter` | Enter directory / open file in vim |
+| `l` / `→` / `Enter` | Enter directory / open file in the right-pane vim |
 | `h` / `←` / `Backspace` | Go to parent directory |
 | `~` | Go to home directory |
 | `g` | Jump to top |
 | `G` | Jump to bottom |
 | `.` | Toggle hidden files |
 | `/` | Enter search mode |
+| `Ctrl-Space` | Toggle focus between browser and vim pane |
 | `Enter` (on directory) | Select directory and exit (triggers shell `cd`) |
 | `q` / `Ctrl-C` | Quit without changing directory |
+
+When the right pane is focused, all keys are forwarded to vim. Press `Ctrl-Space` to return focus to the browser, or `:q` in vim to close the pane entirely.
 
 ### Search mode
 
@@ -91,6 +95,8 @@ Then run `p` (or `p /some/path`) from your terminal.
 
 - [ratatui](https://github.com/ratatui/ratatui) — terminal UI framework
 - [nucleo-matcher](https://github.com/helix-editor/nucleo) — fuzzy matching
+- [portable-pty](https://github.com/wez/wezterm/tree/main/pty) — pseudo-terminal hosting the embedded vim
+- [vt100](https://github.com/doy/vt100-rust) — VT100/ANSI parser for the vim pane
 - [dirs](https://github.com/dirs-dev/dirs-rs) — home directory lookup
 - [walkdir](https://github.com/BurntSushi/walkdir) — directory traversal
 

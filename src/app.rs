@@ -10,6 +10,12 @@ pub enum Mode {
     Search,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Focus {
+    Left,
+    Right,
+}
+
 pub struct App {
     pub current_dir: PathBuf,
     pub entries: Vec<FileEntry>,
@@ -24,6 +30,8 @@ pub struct App {
     pub should_quit: bool,
     pub selected_path: Option<PathBuf>,
     pub open_in_editor: Option<PathBuf>,
+    pub focus: Focus,
+    pub editor_alive: bool,
 }
 
 impl App {
@@ -40,6 +48,8 @@ impl App {
             should_quit: false,
             selected_path: None,
             open_in_editor: None,
+            focus: Focus::Left,
+            editor_alive: false,
         };
         app.load_directory();
         app

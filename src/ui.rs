@@ -1,39 +1,63 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph};
 use ratatui::Frame;
 
-use crate::app::{App, Mode};
+use crate::app::{App, Focus, Mode};
+use crate::editor::Editor;
 use crate::nav;
 use crate::theme;
 
+const HEADER_HEIGHT: u16 = 3;
+const COLUMN_HEADER_HEIGHT: u16 = 1;
+const FOOTER_HEIGHT: u16 = 3;
+const CHROME_HEIGHT: u16 = HEADER_HEIGHT + COLUMN_HEADER_HEIGHT + FOOTER_HEIGHT;
+
 /// Render the entire UI.
-pub fn draw(f: &mut Frame, app: &App) {
+pub fn draw(f: &mut Frame, app: &App, editor: Option<&Editor>) {
     let area = f.area();
 
-    // Fill background
     f.render_widget(Clear, area);
     let bg_block = Block::default().style(theme::text());
     f.render_widget(bg_block, area);
 
-    // Main layout: header (3), column headers (1), file list (fill), footer (3)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
-            Constraint::Length(1),
+            Constraint::Length(HEADER_HEIGHT),
+            Constraint::Length(COLUMN_HEADER_HEIGHT),
             Constraint::Min(1),
-            Constraint::Length(3),
+            Constraint::Length(FOOTER_HEIGHT),
         ])
         .split(area);
 
     draw_header(f, app, chunks[0]);
     draw_column_headers(f, chunks[1]);
-    draw_file_list(f, app, chunks[2]);
+
+    if let Some(ed) = editor {
+        let split = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(chunks[2]);
+        draw_file_list(f, app, split[0]);
+        draw_editor_panel(f, ed, split[1], app.focus == Focus::Right);
+    } else {
+        draw_file_list(f, app, chunks[2]);
+    }
+
     draw_footer(f, app, chunks[3]);
 }
 
-/// Header: k9s-style crumb bar with app name and path.
+/// Compute (cols, rows) for the embedded editor given the full terminal area.
+/// Mirrors the layout split in `draw` so the pty is sized to match the panel.
+pub fn editor_panel_size(area: Rect) -> (u16, u16) {
+    let main_height = area.height.saturating_sub(CHROME_HEIGHT);
+    let right_width = area.width / 2;
+    // -1 col for the left border of the editor panel.
+    (right_width.saturating_sub(1), main_height)
+}
+
 fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     let header = Paragraph::new(Line::from(vec![
         Span::styled("  PHOSPHOR", theme::title()),
@@ -50,12 +74,10 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(header, area);
 }
 
-/// Column header row showing Name and Size labels.
 fn draw_column_headers(f: &mut Frame, area: Rect) {
     let width = area.width as usize;
     let size_label = "Size";
     let name_label = "Name";
-    // 4 chars prefix (▐ + space or just spaces) + 2 gap + size label
     let name_width = width.saturating_sub(size_label.len() + 5);
     let line_text = format!(
         "  {:<nw$}  {}",
@@ -67,7 +89,6 @@ fn draw_column_headers(f: &mut Frame, area: Rect) {
     f.render_widget(para, area);
 }
 
-/// Scrollable file list.
 fn draw_file_list(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .borders(Borders::LEFT | Borders::RIGHT)
@@ -89,7 +110,6 @@ fn draw_file_list(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    // Calculate scroll offset to keep cursor visible
     let list_height = inner.height as usize;
     let offset = if app.cursor >= list_height {
         app.cursor - list_height + 1
@@ -120,10 +140,9 @@ fn draw_file_list(f: &mut Frame, app: &App, area: Rect) {
                 nav::format_size(entry.size)
             };
 
-            // Pad the name to fill available width, then append size
             let available = inner.width as usize;
             let size_width = size_str.len();
-            let name_width = available.saturating_sub(size_width + 4); // 2 prefix + 2 gap
+            let name_width = available.saturating_sub(size_width + 4);
 
             let prefix = if is_selected { "\u{2590} " } else { "  " };
             let padded_name = if display_name.len() > name_width {
@@ -156,7 +175,106 @@ fn draw_file_list(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(list, inner);
 }
 
-/// Footer: status bar or search input with k9s-style key hints.
+fn draw_editor_panel(f: &mut Frame, editor: &Editor, area: Rect, focused: bool) {
+    let border_style = if focused {
+        Style::default().fg(theme::PHOSPHOR).bg(theme::BG).add_modifier(Modifier::BOLD)
+    } else {
+        theme::border()
+    };
+    let block = Block::default()
+        .borders(Borders::LEFT | Borders::RIGHT)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(border_style)
+        .style(theme::text());
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let parser = editor.parser();
+    let parser = match parser.lock() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    let screen = parser.screen();
+
+    let mut lines: Vec<Line> = Vec::with_capacity(inner.height as usize);
+    for row in 0..inner.height {
+        let mut spans: Vec<Span> = Vec::new();
+        let mut current_text = String::new();
+        let mut current_style = Style::default();
+        let mut have_run = false;
+
+        for col in 0..inner.width {
+            let (text, style) = match screen.cell(row, col) {
+                Some(cell) => {
+                    let s = cell.contents().to_string();
+                    let display = if s.is_empty() { " ".to_string() } else { s };
+                    (display, cell_style(cell))
+                }
+                None => (" ".to_string(), Style::default().fg(theme::TEXT_PRIMARY).bg(theme::BG)),
+            };
+
+            if have_run && style != current_style {
+                spans.push(Span::styled(std::mem::take(&mut current_text), current_style));
+            }
+            current_style = style;
+            current_text.push_str(&text);
+            have_run = true;
+        }
+        if have_run {
+            spans.push(Span::styled(current_text, current_style));
+        }
+        lines.push(Line::from(spans));
+    }
+
+    let para = Paragraph::new(lines);
+    f.render_widget(para, inner);
+
+    if focused {
+        let (cy, cx) = screen.cursor_position();
+        let abs_x = inner.x + cx;
+        let abs_y = inner.y + cy;
+        if abs_x < inner.x + inner.width && abs_y < inner.y + inner.height {
+            f.set_cursor_position((abs_x, abs_y));
+        }
+    }
+}
+
+fn cell_style(cell: &vt100::Cell) -> Style {
+    let mut style = Style::default()
+        .fg(map_fg(cell.fgcolor()))
+        .bg(map_bg(cell.bgcolor()));
+    if cell.bold() {
+        style = style.add_modifier(Modifier::BOLD);
+    }
+    if cell.italic() {
+        style = style.add_modifier(Modifier::ITALIC);
+    }
+    if cell.underline() {
+        style = style.add_modifier(Modifier::UNDERLINED);
+    }
+    if cell.inverse() {
+        style = style.add_modifier(Modifier::REVERSED);
+    }
+    style
+}
+
+fn map_fg(c: vt100::Color) -> Color {
+    match c {
+        vt100::Color::Default => theme::TEXT_PRIMARY,
+        vt100::Color::Idx(i) => Color::Indexed(i),
+        vt100::Color::Rgb(r, g, b) => Color::Rgb(r, g, b),
+    }
+}
+
+fn map_bg(c: vt100::Color) -> Color {
+    match c {
+        vt100::Color::Default => theme::BG,
+        vt100::Color::Idx(i) => Color::Indexed(i),
+        vt100::Color::Rgb(r, g, b) => Color::Rgb(r, g, b),
+    }
+}
+
 fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     let content = match &app.mode {
         Mode::Search => {
@@ -170,7 +288,6 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
             ])
         }
         Mode::Normal => {
-            // Show error if present
             if let Some(ref err) = app.status_message {
                 Line::from(vec![Span::styled(
                     format!("  \u{26a0} {}", err),
@@ -180,6 +297,14 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
                 let dirs = app.dir_count();
                 let files = app.file_count();
                 let hidden_indicator = if app.show_hidden { " [H]" } else { "" };
+                let focus_indicator = if app.editor_alive {
+                    match app.focus {
+                        Focus::Left => " [browse]",
+                        Focus::Right => " [vim]",
+                    }
+                } else {
+                    ""
+                };
 
                 let filter_indicator = if !app.search_query.is_empty() {
                     format!("  filter: \"{}\"", app.search_query)
@@ -193,10 +318,15 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
                     Span::styled("search ", theme::status()),
                     Span::styled("<.>", theme::key_hint()),
                     Span::styled("hidden ", theme::status()),
+                    Span::styled("<C-Space>", theme::key_hint()),
+                    Span::styled("focus ", theme::status()),
                     Span::styled("<q>", theme::key_hint()),
                     Span::styled("quit", theme::status()),
                     Span::styled(
-                        format!("  │ {} dirs, {} files{}", dirs, files, hidden_indicator),
+                        format!(
+                            "  │ {} dirs, {} files{}{}",
+                            dirs, files, hidden_indicator, focus_indicator
+                        ),
                         theme::status(),
                     ),
                 ];
