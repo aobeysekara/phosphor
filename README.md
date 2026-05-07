@@ -2,7 +2,9 @@
 
 A keyboard-driven terminal directory browser with fuzzy search, written in Rust.
 
-Navigates directories and integrates with your shell's `cd` — select a directory and your shell changes to it. Opens files directly in vim.
+Navigates directories and integrates with your shell's `cd` — select a directory and your shell changes to it. Opens files directly in an embedded vim pane.
+
+![phosphor browser](screenshots/01-browser.png)
 
 ## Features
 
@@ -12,7 +14,13 @@ Navigates directories and integrates with your shell's `cd` — select a directo
 - Opens files in an embedded vim pane (`l` or `Enter` on a file) — you can keep navigating on the left while editing on the right
 - Toggle focus between the browser and vim with `Ctrl-Space`
 - Shell `cd` integration — select a directory to change to it
-- Phosphor-green CRT colour scheme
+- Phosphor-green CRT colour scheme with an orange selection band
+
+## Split-pane editing
+
+Selecting a file no longer leaves the browser. phosphor spawns vim inside a pseudo-terminal and renders it into the right pane while the left pane stays fully navigable.
+
+![split-pane vim](screenshots/03-split-vim.png)
 
 ## Installation
 
