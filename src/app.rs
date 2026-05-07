@@ -23,6 +23,7 @@ pub struct App {
     pub status_message: Option<String>,
     pub should_quit: bool,
     pub selected_path: Option<PathBuf>,
+    pub open_in_editor: Option<PathBuf>,
 }
 
 impl App {
@@ -34,10 +35,11 @@ impl App {
             cursor: 0,
             mode: Mode::Normal,
             search_query: String::new(),
-            show_hidden: false,
+            show_hidden: true,
             status_message: None,
             should_quit: false,
             selected_path: None,
+            open_in_editor: None,
         };
         app.load_directory();
         app
@@ -117,6 +119,8 @@ impl App {
                         self.search_query.clear();
                         self.mode = Mode::Normal;
                         self.load_directory();
+                    } else {
+                        self.open_in_editor = Some(entry.path.clone());
                     }
                 }
             }
@@ -127,6 +131,8 @@ impl App {
                     if entry.is_dir {
                         self.selected_path = Some(entry.path.clone());
                         self.should_quit = true;
+                    } else {
+                        self.open_in_editor = Some(entry.path.clone());
                     }
                 }
             }

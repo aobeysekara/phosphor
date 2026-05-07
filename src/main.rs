@@ -67,6 +67,17 @@ fn run(
             }
         }
 
+        if let Some(path) = app.open_in_editor.take() {
+            disable_raw_mode()?;
+            execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+
+            let _ = std::process::Command::new("vim").arg(&path).status();
+
+            enable_raw_mode()?;
+            execute!(terminal.backend_mut(), EnterAlternateScreen)?;
+            terminal.clear()?;
+        }
+
         if app.should_quit {
             return Ok(app.selected_path);
         }
