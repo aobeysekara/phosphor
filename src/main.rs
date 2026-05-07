@@ -71,7 +71,19 @@ fn run(
             disable_raw_mode()?;
             execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
 
-            let _ = std::process::Command::new("vim").arg(&path).status();
+            // Open /dev/tty three times so vim gets a real terminal for all
+            // three I/O streams — phosphor's stdout is captured by the shell
+            // wrapper, so inheriting it would make vim think it's not a tty.
+            let open_tty = || std::fs::OpenOptions::new().read(true).write(true).open("/dev/tty");
+            match (open_tty(), open_tty(), open_tty()) {
+                (Ok(i), Ok(o), Ok(e)) => {
+                    let _ = std::process::Command::new("vim")
+                        .arg(&path)
+                        .stdin(i).stdout(o).stderr(e)
+                        .status();
+                }
+                _ => app.status_message = Some("vim: cannot open /dev/tty".to_string()),
+            }
 
             enable_raw_mode()?;
             execute!(terminal.backend_mut(), EnterAlternateScreen)?;
