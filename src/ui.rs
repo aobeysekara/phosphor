@@ -9,10 +9,18 @@ use crate::editor::Editor;
 use crate::nav;
 use crate::theme;
 
-const HEADER_HEIGHT: u16 = 3;
+const HEADER_HEIGHT: u16 = 5;
 const COLUMN_HEADER_HEIGHT: u16 = 1;
 const FOOTER_HEIGHT: u16 = 3;
 const CHROME_HEIGHT: u16 = HEADER_HEIGHT + COLUMN_HEADER_HEIGHT + FOOTER_HEIGHT;
+
+const ICON_TOP: &str = "▄███▄";
+const ICON_MID: &str = "█▒▒▒█";
+const ICON_BOT: &str = "▀███▀";
+
+const WORDMARK_TOP: &str = "█▀▀█ █   █ ▄▀▀▀▄ ▄▀▀▀▀ █▀▀█ █   █ ▄▀▀▀▄ █▀▀▀▄";
+const WORDMARK_MID: &str = "█▀▀▀ █▀▀▀█ █   █  ▀▀▀▄ █▀▀▀ █▀▀▀█ █   █ █▀█▀ ";
+const WORDMARK_BOT: &str = "█    █   █ ▀▄▄▄▀ ▄▄▄▄▀ █    █   █ ▀▄▄▄▀ █  ▀▄";
 
 /// Render the entire UI.
 pub fn draw(f: &mut Frame, app: &App, editor: Option<&Editor>) {
@@ -59,12 +67,24 @@ pub fn editor_panel_size(area: Rect) -> (u16, u16) {
 }
 
 fn draw_header(f: &mut Frame, app: &App, area: Rect) {
-    let header = Paragraph::new(Line::from(vec![
-        Span::styled("  PHOSPHOR", theme::title()),
-        Span::styled(" │ ", theme::header_bg()),
-        Span::styled(app.display_path(), theme::header_bg()),
-    ]))
-    .block(
+    let lines = vec![
+        Line::from(vec![
+            Span::styled(format!(" {}  ", ICON_TOP), theme::title()),
+            Span::styled(WORDMARK_TOP, theme::title()),
+        ]),
+        Line::from(vec![
+            Span::styled(format!(" {}  ", ICON_MID), theme::title()),
+            Span::styled(WORDMARK_MID, theme::title()),
+            Span::styled("  │ ", theme::header_bg()),
+            Span::styled(app.display_path(), theme::header_bg()),
+        ]),
+        Line::from(vec![
+            Span::styled(format!(" {}  ", ICON_BOT), theme::title()),
+            Span::styled(WORDMARK_BOT, theme::title()),
+        ]),
+    ];
+
+    let header = Paragraph::new(lines).block(
         Block::default()
             .borders(Borders::ALL)
             .border_type(ratatui::widgets::BorderType::Rounded)
