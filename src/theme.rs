@@ -1,42 +1,39 @@
 use ratatui::style::{Color, Modifier, Style};
 
-// Dark navy background (k9s-inspired)
-pub const BG: Color = Color::Rgb(13, 17, 23);
+// Near-black with a faint green cast — CRT screen off-state
+pub const BG: Color = Color::Rgb(3, 8, 3);
 
-// Slightly lighter navy for header bar
-pub const HEADER_BG: Color = Color::Rgb(20, 28, 40);
+// Slightly lighter for the header bar
+pub const HEADER_BG: Color = Color::Rgb(6, 16, 6);
 
-// Primary text — light grey
-pub const TEXT_PRIMARY: Color = Color::Rgb(200, 210, 220);
+// Standard phosphor glow — P1 green
+pub const TEXT_PRIMARY: Color = Color::Rgb(0, 230, 55);
 
-// Dimmed text — muted grey
-pub const TEXT_DIM: Color = Color::Rgb(110, 120, 135);
+// Dimmed phosphor — further from the beam centre
+pub const TEXT_DIM: Color = Color::Rgb(0, 125, 30);
 
-// Directories — bright cyan
-pub const CYAN: Color = Color::Rgb(0, 200, 220);
+// Peak phosphor glow — used for directories
+pub const PHOSPHOR: Color = Color::Rgb(0, 255, 65);
 
-// Dimmed cyan for alternating directory rows
-pub const CYAN_DIM: Color = Color::Rgb(0, 140, 155);
+// Dimmed peak glow — alternating directory rows
+pub const PHOSPHOR_DIM: Color = Color::Rgb(0, 170, 48);
 
-// Bright cyan for titles and accents
-pub const CYAN_BRIGHT: Color = Color::Rgb(80, 220, 240);
+// Bloom highlight — used for titles and selected directory text
+pub const PHOSPHOR_BRIGHT: Color = Color::Rgb(140, 255, 165);
 
-// Teal background for selected row
-pub const SELECTED_BG: Color = Color::Rgb(0, 80, 100);
+// Dark green selection band
+pub const SELECTED_BG: Color = Color::Rgb(0, 58, 18);
 
-// Steel blue for borders
-pub const BORDER_COLOUR: Color = Color::Rgb(58, 80, 120);
+// Border — dark phosphor trace
+pub const BORDER_COLOUR: Color = Color::Rgb(0, 72, 20);
 
-// Status bar — muted steel
-pub const STATUS: Color = Color::Rgb(90, 110, 140);
+// Status bar — muted background-level green
+pub const STATUS: Color = Color::Rgb(0, 95, 25);
 
-// Search input — bold green (kept from original)
-pub const GREEN: Color = Color::Rgb(80, 240, 120);
-
-// Error / warning colour
+// Error colour
 pub const RED: Color = Color::Rgb(255, 60, 40);
 
-/// Default text style: light grey on dark navy.
+/// Default text style.
 pub fn text() -> Style {
     Style::default().fg(TEXT_PRIMARY).bg(BG)
 }
@@ -46,17 +43,17 @@ pub fn text_dim() -> Style {
     Style::default().fg(TEXT_DIM).bg(BG)
 }
 
-/// Directory entry style: cyan on dark navy.
+/// Directory entry style.
 pub fn dir_entry() -> Style {
-    Style::default().fg(CYAN).bg(BG)
+    Style::default().fg(PHOSPHOR).bg(BG)
 }
 
 /// Dimmed directory entry for alternating rows.
 pub fn dir_entry_dim() -> Style {
-    Style::default().fg(CYAN_DIM).bg(BG)
+    Style::default().fg(PHOSPHOR_DIM).bg(BG)
 }
 
-/// Selected row: bright text on teal background.
+/// Selected file row.
 pub fn selected() -> Style {
     Style::default()
         .fg(TEXT_PRIMARY)
@@ -64,10 +61,10 @@ pub fn selected() -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
-/// Selected directory row: bright cyan on teal background.
+/// Selected directory row.
 pub fn selected_dir() -> Style {
     Style::default()
-        .fg(CYAN_BRIGHT)
+        .fg(PHOSPHOR_BRIGHT)
         .bg(SELECTED_BG)
         .add_modifier(Modifier::BOLD)
 }
@@ -77,10 +74,10 @@ pub fn border() -> Style {
     Style::default().fg(BORDER_COLOUR).bg(BG)
 }
 
-/// Header title style: bold bright cyan.
+/// Header title style.
 pub fn title() -> Style {
     Style::default()
-        .fg(CYAN_BRIGHT)
+        .fg(PHOSPHOR_BRIGHT)
         .bg(HEADER_BG)
         .add_modifier(Modifier::BOLD)
 }
@@ -90,7 +87,7 @@ pub fn header_bg() -> Style {
     Style::default().fg(TEXT_PRIMARY).bg(HEADER_BG)
 }
 
-/// Column header labels (Name, Size).
+/// Column header labels.
 pub fn column_header() -> Style {
     Style::default()
         .fg(TEXT_DIM)
@@ -103,9 +100,9 @@ pub fn status() -> Style {
     Style::default().fg(STATUS).bg(BG)
 }
 
-/// Key hint accent (the `<key>` portion in footer).
+/// Key hint accent in footer.
 pub fn key_hint() -> Style {
-    Style::default().fg(CYAN).bg(BG)
+    Style::default().fg(PHOSPHOR).bg(BG)
 }
 
 /// Error message style.
@@ -115,5 +112,8 @@ pub fn error() -> Style {
 
 /// Search input text style.
 pub fn search_input() -> Style {
-    Style::default().fg(GREEN).bg(BG).add_modifier(Modifier::BOLD)
+    Style::default()
+        .fg(PHOSPHOR_BRIGHT)
+        .bg(BG)
+        .add_modifier(Modifier::BOLD)
 }
