@@ -21,8 +21,11 @@ pub const PHOSPHOR_DIM: Color = Color::Rgb(0, 170, 48);
 // Bloom highlight — used for titles and selected directory text
 pub const PHOSPHOR_BRIGHT: Color = Color::Rgb(140, 255, 165);
 
-// Dark green selection band
-pub const SELECTED_BG: Color = Color::Rgb(0, 58, 18);
+// Vivid orange selection band
+pub const SELECTED_BG: Color = Color::Rgb(255, 140, 0);
+
+// Near-black text on the orange selection band, for high contrast
+pub const SELECTED_FG: Color = Color::Rgb(15, 8, 0);
 
 // Border — dark phosphor trace
 pub const BORDER_COLOUR: Color = Color::Rgb(0, 72, 20);
@@ -56,7 +59,7 @@ pub fn dir_entry_dim() -> Style {
 /// Selected file row.
 pub fn selected() -> Style {
     Style::default()
-        .fg(TEXT_PRIMARY)
+        .fg(SELECTED_FG)
         .bg(SELECTED_BG)
         .add_modifier(Modifier::BOLD)
 }
@@ -64,7 +67,7 @@ pub fn selected() -> Style {
 /// Selected directory row.
 pub fn selected_dir() -> Style {
     Style::default()
-        .fg(PHOSPHOR_BRIGHT)
+        .fg(SELECTED_FG)
         .bg(SELECTED_BG)
         .add_modifier(Modifier::BOLD)
 }
