@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::fuzzy;
 use crate::input::Action;
 use crate::nav::{self, FileEntry};
+use crate::tree::{self, TreeNode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mode {
@@ -32,6 +33,7 @@ pub struct App {
     pub open_in_editor: Option<PathBuf>,
     pub focus: Focus,
     pub editor_alive: bool,
+    pub tree: Vec<TreeNode>,
 }
 
 impl App {
@@ -50,6 +52,7 @@ impl App {
             open_in_editor: None,
             focus: Focus::Left,
             editor_alive: false,
+            tree: Vec::new(),
         };
         app.load_directory();
         app
@@ -67,6 +70,7 @@ impl App {
                 self.status_message = Some(msg);
             }
         }
+        self.tree = tree::build(&self.current_dir, self.show_hidden);
         self.recompute_visible();
         self.cursor = 0;
     }
@@ -178,8 +182,8 @@ impl App {
 
             Action::ToggleHidden => {
                 self.show_hidden = !self.show_hidden;
+                self.tree = tree::build(&self.current_dir, self.show_hidden);
                 self.recompute_visible();
-                // Clamp cursor
                 if !self.visible.is_empty() {
                     self.cursor = self.cursor.min(self.visible.len() - 1);
                 } else {

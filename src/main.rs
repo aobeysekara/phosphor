@@ -4,6 +4,7 @@ mod fuzzy;
 mod input;
 mod nav;
 mod theme;
+mod tree;
 mod ui;
 
 use std::env;

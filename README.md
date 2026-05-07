@@ -11,6 +11,8 @@ Navigates directories and integrates with your shell's `cd` — select a directo
 - vim-style key bindings (`hjkl`, `g`/`G`)
 - Real-time fuzzy search with `nucleo`
 - Shows hidden files by default (toggle with `.`)
+- Tree sidebar with the surrounding directory structure, in orange
+- Metadata strip at the bottom: size, permissions, modified time, type
 - Opens files in an embedded vim pane (`l` or `Enter` on a file) — you can keep navigating on the left while editing on the right
 - Toggle focus between the browser and vim with `Ctrl-Space`
 - Shell `cd` integration — select a directory to change to it

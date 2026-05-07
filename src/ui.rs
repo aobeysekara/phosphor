@@ -8,11 +8,18 @@ use crate::app::{App, Focus, Mode};
 use crate::editor::Editor;
 use crate::nav;
 use crate::theme;
+use crate::tree;
 
 const HEADER_HEIGHT: u16 = 5;
 const COLUMN_HEADER_HEIGHT: u16 = 1;
+const METADATA_HEIGHT: u16 = 3;
 const FOOTER_HEIGHT: u16 = 3;
-const CHROME_HEIGHT: u16 = HEADER_HEIGHT + COLUMN_HEADER_HEIGHT + FOOTER_HEIGHT;
+const CHROME_HEIGHT: u16 =
+    HEADER_HEIGHT + COLUMN_HEADER_HEIGHT + METADATA_HEIGHT + FOOTER_HEIGHT;
+
+const TREE_PCT: u16 = 25;
+const LIST_PCT_WITH_VIM: u16 = 35;
+const VIM_PCT: u16 = 40;
 
 const ICON_TOP: &str = "▄███▄";
 const ICON_MID: &str = "█▒▒▒█";
@@ -36,6 +43,7 @@ pub fn draw(f: &mut Frame, app: &App, editor: Option<&Editor>) {
             Constraint::Length(HEADER_HEIGHT),
             Constraint::Length(COLUMN_HEADER_HEIGHT),
             Constraint::Min(1),
+            Constraint::Length(METADATA_HEIGHT),
             Constraint::Length(FOOTER_HEIGHT),
         ])
         .split(area);
@@ -43,27 +51,41 @@ pub fn draw(f: &mut Frame, app: &App, editor: Option<&Editor>) {
     draw_header(f, app, chunks[0]);
     draw_column_headers(f, chunks[1]);
 
+    let main_area = chunks[2];
     if let Some(ed) = editor {
         let split = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(chunks[2]);
-        draw_file_list(f, app, split[0]);
-        draw_editor_panel(f, ed, split[1], app.focus == Focus::Right);
+            .constraints([
+                Constraint::Percentage(TREE_PCT),
+                Constraint::Percentage(LIST_PCT_WITH_VIM),
+                Constraint::Percentage(VIM_PCT),
+            ])
+            .split(main_area);
+        draw_tree(f, app, split[0]);
+        draw_file_list(f, app, split[1]);
+        draw_editor_panel(f, ed, split[2], app.focus == Focus::Right);
     } else {
-        draw_file_list(f, app, chunks[2]);
+        let split = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(30),
+                Constraint::Percentage(70),
+            ])
+            .split(main_area);
+        draw_tree(f, app, split[0]);
+        draw_file_list(f, app, split[1]);
     }
 
-    draw_footer(f, app, chunks[3]);
+    draw_metadata(f, app, chunks[3]);
+    draw_footer(f, app, chunks[4]);
 }
 
 /// Compute (cols, rows) for the embedded editor given the full terminal area.
 /// Mirrors the layout split in `draw` so the pty is sized to match the panel.
 pub fn editor_panel_size(area: Rect) -> (u16, u16) {
     let main_height = area.height.saturating_sub(CHROME_HEIGHT);
-    let right_width = area.width / 2;
-    // -1 col for the left border of the editor panel.
-    (right_width.saturating_sub(1), main_height)
+    let editor_width = area.width.saturating_mul(VIM_PCT) / 100;
+    (editor_width.saturating_sub(1), main_height)
 }
 
 fn draw_header(f: &mut Frame, app: &App, area: Rect) {
@@ -193,6 +215,84 @@ fn draw_file_list(f: &mut Frame, app: &App, area: Rect) {
 
     let list = List::new(items);
     f.render_widget(list, inner);
+}
+
+fn draw_tree(f: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::LEFT | Borders::RIGHT)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(theme::border())
+        .style(theme::text());
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if app.tree.is_empty() || inner.width == 0 {
+        return;
+    }
+
+    let max_width = inner.width as usize;
+    let visible_rows = inner.height as usize;
+
+    let style = Style::default().fg(theme::ORANGE).bg(theme::BG);
+
+    let lines: Vec<Line> = app
+        .tree
+        .iter()
+        .take(visible_rows)
+        .map(|node| Line::from(Span::styled(tree::render_line(node, max_width), style)))
+        .collect();
+
+    let para = Paragraph::new(lines);
+    f.render_widget(para, inner);
+}
+
+fn draw_metadata(f: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(theme::border())
+        .style(theme::text());
+
+    let inner_para = match app.selected_entry() {
+        None => Paragraph::new(Span::styled("  (nothing selected)", theme::text_dim())),
+        Some(entry) => {
+            let name_span = if entry.is_dir {
+                Span::styled(format!("  {}/", entry.name), theme::dir_entry())
+            } else {
+                Span::styled(format!("  {}", entry.name), theme::text())
+            };
+
+            let mut spans = vec![name_span];
+
+            if !entry.is_dir {
+                spans.push(Span::styled("  ·  ", theme::text_dim()));
+                spans.push(Span::styled(nav::format_size(entry.size), theme::status()));
+            }
+
+            if let Ok(metadata) = std::fs::metadata(&entry.path) {
+                spans.push(Span::styled("  ·  ", theme::text_dim()));
+                spans.push(Span::styled(nav::format_perms(&metadata), theme::status()));
+
+                if let Ok(modified) = metadata.modified() {
+                    spans.push(Span::styled("  ·  ", theme::text_dim()));
+                    spans.push(Span::styled(nav::format_modified(modified), theme::status()));
+                }
+            }
+
+            spans.push(Span::styled("  ·  ", theme::text_dim()));
+            let type_label = if entry.is_dir {
+                "directory"
+            } else {
+                nav::detect_type(&entry.path)
+            };
+            spans.push(Span::styled(type_label, theme::key_hint()));
+
+            Paragraph::new(Line::from(spans))
+        }
+    };
+
+    f.render_widget(inner_para.block(block), area);
 }
 
 fn draw_editor_panel(f: &mut Frame, editor: &Editor, area: Rect, focused: bool) {
