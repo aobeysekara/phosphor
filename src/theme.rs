@@ -21,8 +21,9 @@ pub const PHOSPHOR_DIM: Color = Color::Rgb(0, 170, 48);
 // Bloom highlight — used for titles and selected directory text
 pub const PHOSPHOR_BRIGHT: Color = Color::Rgb(140, 255, 165);
 
-// Vivid orange selection band
-pub const SELECTED_BG: Color = Color::Rgb(255, 140, 0);
+// Vivid orange — used for the logo and the selection band
+pub const ORANGE: Color = Color::Rgb(255, 140, 0);
+pub const SELECTED_BG: Color = ORANGE;
 
 // Near-black text on the orange selection band, for high contrast
 pub const SELECTED_FG: Color = Color::Rgb(15, 8, 0);
@@ -80,7 +81,7 @@ pub fn border() -> Style {
 /// Header title style.
 pub fn title() -> Style {
     Style::default()
-        .fg(PHOSPHOR_BRIGHT)
+        .fg(ORANGE)
         .bg(HEADER_BG)
         .add_modifier(Modifier::BOLD)
 }
