@@ -4,6 +4,9 @@ use std::path::Path;
 
 const TREE_MAX_DEPTH: usize = 2;
 const TREE_MAX_NODES: usize = 200;
+/// Cap entries read from a single directory to avoid pathological allocation
+/// on directories with millions of children.
+const MAX_ENTRIES_PER_DIR: usize = 1000;
 
 #[derive(Debug, Clone)]
 pub struct TreeNode {
@@ -64,6 +67,7 @@ fn walk(
             let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
             Some((e.path(), is_dir, name))
         })
+        .take(MAX_ENTRIES_PER_DIR)
         .collect();
 
     entries.sort_by(|a, b| match (a.1, b.1) {

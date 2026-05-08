@@ -16,7 +16,7 @@ Set Padding 20
 Set Theme "Dracula"
 
 Hide
-Type "cd /Users/indi/dev/ai/claude/phosphor"
+Type "clear"
 Enter
 Sleep 200ms
 Show

@@ -92,8 +92,14 @@ impl Editor {
 
     pub fn open_file(&mut self, file: &Path) -> io::Result<()> {
         let path_str = file.to_string_lossy();
+        let escaped = escape_for_vim_edit(&path_str).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "path contains a control character",
+            )
+        })?;
         // ESC ensures we're in normal mode, then :e <path><CR>
-        let cmd = format!("\x1b:e {}\r", path_str);
+        let cmd = format!("\x1b:e {}\r", escaped);
         self.send_bytes(cmd.as_bytes())
     }
 
@@ -111,6 +117,42 @@ impl Drop for Editor {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+/// Escape a path so it is safe to paste into vim's `:e <path>` command.
+/// Returns `None` if the path contains a character that would terminate or
+/// reinterpret the command line (CR, LF, NUL, ESC), which we refuse to send.
+/// Otherwise prefixes vim cmdline metacharacters with a backslash, matching
+/// the behaviour of vim's own `fnameescape()` function.
+pub fn escape_for_vim_edit(path: &str) -> Option<String> {
+    let mut out = String::with_capacity(path.len() + 8);
+    for c in path.chars() {
+        if matches!(c, '\n' | '\r' | '\0' | '\x1b') {
+            return None;
+        }
+        if matches!(
+            c,
+            ' ' | '\t'
+                | '\\'
+                | '|'
+                | '"'
+                | '%'
+                | '#'
+                | '*'
+                | '?'
+                | '['
+                | '{'
+                | '`'
+                | '$'
+                | '!'
+                | '<'
+                | '\''
+        ) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    Some(out)
 }
 
 /// Translate a ratatui/crossterm `KeyEvent` into the byte sequence a terminal
@@ -254,5 +296,44 @@ mod tests {
             key_to_bytes(k(KeyCode::F(5), KeyModifiers::NONE)),
             b"\x1b[15~",
         );
+    }
+
+    #[test]
+    fn vim_escape_passes_safe_chars() {
+        assert_eq!(escape_for_vim_edit("foo.rs").as_deref(), Some("foo.rs"));
+        assert_eq!(
+            escape_for_vim_edit("path/to/file.rs").as_deref(),
+            Some("path/to/file.rs"),
+        );
+    }
+
+    #[test]
+    fn vim_escape_handles_space_and_tab() {
+        assert_eq!(escape_for_vim_edit("a b").as_deref(), Some("a\\ b"));
+        assert_eq!(escape_for_vim_edit("a\tb").as_deref(), Some("a\\\tb"));
+    }
+
+    #[test]
+    fn vim_escape_handles_pipe_and_quote() {
+        assert_eq!(escape_for_vim_edit("foo|bar").as_deref(), Some("foo\\|bar"));
+        assert_eq!(escape_for_vim_edit("foo\"bar").as_deref(), Some("foo\\\"bar"));
+    }
+
+    #[test]
+    fn vim_escape_handles_backslash() {
+        assert_eq!(escape_for_vim_edit("a\\b").as_deref(), Some("a\\\\b"));
+    }
+
+    #[test]
+    fn vim_escape_handles_glob_chars() {
+        assert_eq!(escape_for_vim_edit("a*b?c[d").as_deref(), Some("a\\*b\\?c\\[d"));
+    }
+
+    #[test]
+    fn vim_escape_rejects_control_chars() {
+        assert!(escape_for_vim_edit("foo\nbar").is_none());
+        assert!(escape_for_vim_edit("foo\rbar").is_none());
+        assert!(escape_for_vim_edit("foo\0bar").is_none());
+        assert!(escape_for_vim_edit("foo\x1bbar").is_none());
     }
 }

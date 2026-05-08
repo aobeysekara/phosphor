@@ -14,14 +14,20 @@ pub struct FileEntry {
 
 /// Read directory contents and return sorted entries.
 /// Directories are sorted first, then files. Each group is sorted alphabetically
-/// (case-insensitive). Returns an error string on failure.
+/// (case-insensitive). Returns an error string on failure. Entries past
+/// `MAX_LIST_ENTRIES` are dropped to bound memory on pathological directories.
 pub fn read_directory(dir: &Path) -> Result<Vec<FileEntry>, String> {
+    const MAX_LIST_ENTRIES: usize = 5000;
+
     let read_dir = fs::read_dir(dir)
         .map_err(|e| format!("Cannot read {}: {}", dir.display(), e))?;
 
     let mut entries: Vec<FileEntry> = Vec::new();
 
     for result in read_dir {
+        if entries.len() >= MAX_LIST_ENTRIES {
+            break;
+        }
         let entry = match result {
             Ok(e) => e,
             Err(_) => continue,
