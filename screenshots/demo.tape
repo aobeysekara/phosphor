@@ -25,11 +25,16 @@ Type "phosphor"
 Enter
 Sleep 1500ms
 
+# Top of list (screenshots/). Park the cursor here in case vhs flushed any
+# spurious keystrokes during startup.
+Up@80ms 5
+Sleep 200ms
+
 Screenshot screenshots/01-browser.png
 
-# Move the cursor down a few rows so the orange highlight is on a file rather
-# than the top entry.
-Down@120ms 5
+# Move down to a real file so the orange highlight lands on Cargo.lock.
+# Entries: screenshots/, src/, .gitignore, Cargo.lock, Cargo.toml, LICENSE, README.md
+Down@120ms 3
 Sleep 600ms
 
 Screenshot screenshots/02-selected.png
@@ -40,8 +45,8 @@ Sleep 200ms
 Right
 Sleep 700ms
 
-# In src/: cursor at .claude (0). Skip past .claude to main.rs.
-Down@120ms 5
+# In src/: app.rs (0), editor.rs (1), fuzzy.rs (2), input.rs (3), main.rs (4).
+Down@120ms 4
 Right
 Sleep 4000ms
 
