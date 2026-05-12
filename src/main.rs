@@ -13,7 +13,10 @@ use std::io;
 use std::time::Duration;
 
 use ratatui::backend::CrosstermBackend;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use ratatui::crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton,
+    MouseEventKind,
+};
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -23,7 +26,7 @@ use ratatui::Terminal;
 use app::{App, Focus};
 use editor::{key_to_bytes, Editor};
 use input::{handle_key, handle_md_viewer_key, resize_action};
-use ui::right_panel_size;
+use ui::{main_area, right_panel_size};
 
 fn main() -> io::Result<()> {
     let start_dir = env::args()
@@ -33,14 +36,14 @@ fn main() -> io::Result<()> {
 
     enable_raw_mode()?;
     let mut stderr = io::stderr();
-    execute!(stderr, EnterAlternateScreen)?;
+    execute!(stderr, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stderr);
     let mut terminal = Terminal::new(backend)?;
 
     let selected = run(&mut terminal, start_dir);
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(terminal.backend_mut(), DisableMouseCapture, LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     if let Some(path) = selected? {
@@ -110,38 +113,80 @@ fn run(
         terminal.draw(|f| ui::draw(f, &app, editor.as_ref()))?;
 
         if event::poll(Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                let is_focus_toggle = key.modifiers.contains(KeyModifiers::CONTROL)
-                    && key.code == KeyCode::Char(' ');
-
-                if is_focus_toggle {
-                    let right_active = app.has_right_panel();
-                    app.focus = match (app.focus, right_active) {
-                        (Focus::Right, _) => Focus::Left,
-                        (Focus::Left, true) => Focus::Right,
-                        (Focus::Left, false) => Focus::Left,
-                    };
-                } else if let Some(action) = resize_action(key) {
-                    app.update(action);
-                } else if app.focus == Focus::Right {
-                    if app.md_viewer.is_some() {
-                        let action = handle_md_viewer_key(key);
-                        app.update(action);
-                    } else if let Some(ed) = editor.as_mut() {
-                        let bytes = key_to_bytes(key);
-                        if !bytes.is_empty() {
-                            let _ = ed.send_bytes(&bytes);
-                        }
-                    }
-                } else {
-                    let action = handle_key(key, &app.mode);
-                    app.update(action);
-                }
+            handle_event(event::read()?, &mut app, editor.as_mut(), term_rect);
+            while event::poll(Duration::from_millis(0))? {
+                handle_event(event::read()?, &mut app, editor.as_mut(), term_rect);
             }
         }
 
         if app.should_quit {
             return Ok(app.selected_path);
         }
+    }
+}
+
+fn handle_event(
+    event: Event,
+    app: &mut App,
+    editor: Option<&mut Editor>,
+    term_rect: ratatui::layout::Rect,
+) {
+    match event {
+        Event::Key(key) => handle_key_event(key, app, editor),
+        Event::Mouse(mouse) => {
+            let area = main_area(term_rect);
+            match mouse.kind {
+                MouseEventKind::Down(MouseButton::Left) => {
+                    app.start_drag(mouse.column, mouse.row, area);
+                }
+                MouseEventKind::Drag(MouseButton::Left) => {
+                    app.update_drag(mouse.column, area);
+                }
+                MouseEventKind::Up(MouseButton::Left) => {
+                    app.end_drag();
+                }
+                _ => {}
+            }
+        }
+        _ => {}
+    }
+}
+
+fn handle_key_event(
+    key: ratatui::crossterm::event::KeyEvent,
+    app: &mut App,
+    editor: Option<&mut Editor>,
+) {
+    let is_focus_toggle =
+        key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char(' ');
+
+    if is_focus_toggle {
+        let right_active = app.has_right_panel();
+        app.focus = match (app.focus, right_active) {
+            (Focus::Right, _) => Focus::Left,
+            (Focus::Left, true) => Focus::Right,
+            (Focus::Left, false) => Focus::Left,
+        };
+        return;
+    }
+
+    if let Some(action) = resize_action(key) {
+        app.update(action);
+        return;
+    }
+
+    if app.focus == Focus::Right {
+        if app.md_viewer.is_some() {
+            let action = handle_md_viewer_key(key);
+            app.update(action);
+        } else if let Some(ed) = editor {
+            let bytes = key_to_bytes(key);
+            if !bytes.is_empty() {
+                let _ = ed.send_bytes(&bytes);
+            }
+        }
+    } else {
+        let action = handle_key(key, &app.mode);
+        app.update(action);
     }
 }

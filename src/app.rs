@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use ratatui::layout::Rect;
+
 use crate::fuzzy;
 use crate::input::Action;
 use crate::md::{self, MdViewer};
@@ -16,6 +18,12 @@ pub enum Mode {
 pub enum Focus {
     Left,
     Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Splitter {
+    TreeList,
+    ListRight,
 }
 
 pub const TREE_PCT_MIN: u16 = 10;
@@ -45,6 +53,7 @@ pub struct App {
     pub md_viewer: Option<MdViewer>,
     pub tree_pct: u16,
     pub right_pct: u16,
+    pub drag: Option<Splitter>,
 }
 
 impl App {
@@ -67,6 +76,7 @@ impl App {
             md_viewer: None,
             tree_pct: 25,
             right_pct: 40,
+            drag: None,
         };
         app.load_directory();
         app
@@ -338,6 +348,70 @@ impl App {
         }
     }
 
+    /// Begin a panel-resize drag if `(x, y)` lands on a splitter column.
+    /// Returns true if a drag was started.
+    pub fn start_drag(&mut self, x: u16, y: u16, main_area: Rect) -> bool {
+        if !point_in_area(x, y, main_area) || main_area.width == 0 {
+            return false;
+        }
+        let tree_boundary = boundary_col(main_area, self.tree_pct);
+        if near_column(x, tree_boundary) {
+            self.drag = Some(Splitter::TreeList);
+            return true;
+        }
+        if self.has_right_panel() {
+            let right_width =
+                (main_area.width as u32 * self.right_pct as u32 / 100) as u16;
+            let right_boundary = main_area.x + main_area.width.saturating_sub(right_width);
+            if near_column(x, right_boundary) {
+                self.drag = Some(Splitter::ListRight);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Update the currently dragged splitter to follow `x`. No-op if no drag is active.
+    pub fn update_drag(&mut self, x: u16, main_area: Rect) {
+        let Some(splitter) = self.drag else { return };
+        if main_area.width == 0 {
+            return;
+        }
+        let rel_x = x
+            .saturating_sub(main_area.x)
+            .min(main_area.width.saturating_sub(1));
+        let width = main_area.width as u32;
+        match splitter {
+            Splitter::TreeList => {
+                let raw = (rel_x as u32 * 100 / width) as u16;
+                let new = raw.clamp(TREE_PCT_MIN, TREE_PCT_MAX);
+                let right = if self.has_right_panel() { self.right_pct } else { 0 };
+                let max_allowed = 100u16
+                    .saturating_sub(right)
+                    .saturating_sub(LIST_PCT_MIN);
+                self.tree_pct = new.min(max_allowed);
+            }
+            Splitter::ListRight => {
+                if !self.has_right_panel() {
+                    self.drag = None;
+                    return;
+                }
+                let right_width = main_area.width.saturating_sub(rel_x) as u32;
+                let raw = (right_width * 100 / width) as u16;
+                let new = raw.clamp(RIGHT_PCT_MIN, RIGHT_PCT_MAX);
+                let max_allowed = 100u16
+                    .saturating_sub(self.tree_pct)
+                    .saturating_sub(LIST_PCT_MIN);
+                self.right_pct = new.min(max_allowed);
+            }
+        }
+    }
+
+    /// End any in-progress drag.
+    pub fn end_drag(&mut self) {
+        self.drag = None;
+    }
+
     /// Get the currently selected entry, if any.
     pub fn selected_entry(&self) -> Option<&FileEntry> {
         self.visible
@@ -382,6 +456,23 @@ fn clamp_pct(current: u16, delta: i16, min: u16, max: u16) -> u16 {
     signed.clamp(min as i32, max as i32) as u16
 }
 
+fn boundary_col(area: Rect, pct: u16) -> u16 {
+    area.x + (area.width as u32 * pct as u32 / 100) as u16
+}
+
+fn point_in_area(x: u16, y: u16, area: Rect) -> bool {
+    x >= area.x
+        && x < area.x.saturating_add(area.width)
+        && y >= area.y
+        && y < area.y.saturating_add(area.height)
+}
+
+fn near_column(x: u16, col: u16) -> bool {
+    let lo = col.saturating_sub(1);
+    let hi = col.saturating_add(1);
+    x >= lo && x <= hi
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -405,6 +496,7 @@ mod tests {
             md_viewer: None,
             tree_pct: 25,
             right_pct: 40,
+            drag: None,
         }
     }
 
@@ -451,5 +543,96 @@ mod tests {
         }
         assert!(a.right_pct <= RIGHT_PCT_MAX);
         assert!(100 - a.tree_pct - a.right_pct >= LIST_PCT_MIN);
+    }
+
+    fn main_area() -> Rect {
+        Rect::new(0, 6, 100, 20)
+    }
+
+    #[test]
+    fn start_drag_on_tree_boundary_begins_tree_list_drag() {
+        let mut a = app();
+        assert!(a.start_drag(25, 10, main_area()));
+        assert_eq!(a.drag, Some(Splitter::TreeList));
+    }
+
+    #[test]
+    fn start_drag_on_right_boundary_begins_list_right_drag() {
+        let mut a = app();
+        a.editor_alive = true;
+        assert!(a.start_drag(60, 10, main_area()));
+        assert_eq!(a.drag, Some(Splitter::ListRight));
+    }
+
+    #[test]
+    fn start_drag_in_panel_interior_does_nothing() {
+        let mut a = app();
+        a.editor_alive = true;
+        assert!(!a.start_drag(45, 10, main_area()));
+        assert!(a.drag.is_none());
+    }
+
+    #[test]
+    fn start_drag_outside_main_area_is_ignored() {
+        let mut a = app();
+        assert!(!a.start_drag(25, 2, main_area()));
+    }
+
+    #[test]
+    fn start_drag_on_right_boundary_without_right_panel_is_ignored() {
+        let mut a = app();
+        // right panel inactive, so the only boundary lives at tree_pct=25
+        assert!(!a.start_drag(60, 10, main_area()));
+    }
+
+    #[test]
+    fn update_drag_moves_tree_splitter() {
+        let mut a = app();
+        a.start_drag(25, 10, main_area());
+        a.update_drag(40, main_area());
+        assert_eq!(a.tree_pct, 40);
+    }
+
+    #[test]
+    fn update_drag_moves_right_splitter() {
+        let mut a = app();
+        a.editor_alive = true;
+        a.start_drag(60, 10, main_area());
+        a.update_drag(50, main_area());
+        assert_eq!(a.right_pct, 50);
+    }
+
+    #[test]
+    fn update_drag_clamps_tree_to_minimum() {
+        let mut a = app();
+        a.start_drag(25, 10, main_area());
+        a.update_drag(2, main_area());
+        assert_eq!(a.tree_pct, TREE_PCT_MIN);
+    }
+
+    #[test]
+    fn update_drag_clamps_to_keep_list_visible() {
+        let mut a = app();
+        a.editor_alive = true;
+        a.start_drag(60, 10, main_area());
+        a.update_drag(30, main_area()); // would give right_pct=70, must respect list min
+        assert!(100 - a.tree_pct - a.right_pct >= LIST_PCT_MIN);
+        assert!(a.right_pct <= RIGHT_PCT_MAX);
+    }
+
+    #[test]
+    fn end_drag_clears_state() {
+        let mut a = app();
+        a.start_drag(25, 10, main_area());
+        a.end_drag();
+        assert!(a.drag.is_none());
+    }
+
+    #[test]
+    fn update_drag_without_active_drag_is_noop() {
+        let mut a = app();
+        a.update_drag(80, main_area());
+        assert_eq!(a.tree_pct, 25);
+        assert_eq!(a.right_pct, 40);
     }
 }

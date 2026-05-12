@@ -98,6 +98,17 @@ pub fn right_panel_size(area: Rect, right_pct: u16) -> (u16, u16) {
     (editor_width.saturating_sub(1), main_height)
 }
 
+/// Rect occupied by the tree/list/right split, given the full terminal area.
+/// Used to interpret mouse coordinates against the panel layout.
+pub fn main_area(area: Rect) -> Rect {
+    Rect {
+        x: area.x,
+        y: area.y.saturating_add(HEADER_HEIGHT + COLUMN_HEADER_HEIGHT),
+        width: area.width,
+        height: area.height.saturating_sub(CHROME_HEIGHT),
+    }
+}
+
 fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     let lines = vec![
         Line::from(vec![
@@ -488,7 +499,7 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
                     Span::styled("<.>", theme::key_hint()),
                     Span::styled("hidden ", theme::status()),
                     Span::styled("<A-h/l>", theme::key_hint()),
-                    Span::styled("resize ", theme::status()),
+                    Span::styled("resize (or drag border) ", theme::status()),
                     Span::styled("<C-Space>", theme::key_hint()),
                     Span::styled("focus ", theme::status()),
                 ];
