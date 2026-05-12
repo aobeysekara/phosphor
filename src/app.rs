@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use crate::fuzzy;
 use crate::input::Action;
+use crate::md::{self, MdViewer};
 use crate::nav::{self, FileEntry};
 use crate::tree::{self, TreeNode};
 
@@ -16,6 +17,13 @@ pub enum Focus {
     Left,
     Right,
 }
+
+pub const TREE_PCT_MIN: u16 = 10;
+pub const TREE_PCT_MAX: u16 = 50;
+pub const RIGHT_PCT_MIN: u16 = 20;
+pub const RIGHT_PCT_MAX: u16 = 75;
+pub const LIST_PCT_MIN: u16 = 15;
+pub const RESIZE_STEP: u16 = 5;
 
 pub struct App {
     pub current_dir: PathBuf,
@@ -34,6 +42,9 @@ pub struct App {
     pub focus: Focus,
     pub editor_alive: bool,
     pub tree: Vec<TreeNode>,
+    pub md_viewer: Option<MdViewer>,
+    pub tree_pct: u16,
+    pub right_pct: u16,
 }
 
 impl App {
@@ -53,6 +64,9 @@ impl App {
             focus: Focus::Left,
             editor_alive: false,
             tree: Vec::new(),
+            md_viewer: None,
+            tree_pct: 25,
+            right_pct: 40,
         };
         app.load_directory();
         app
@@ -107,6 +121,26 @@ impl App {
         }
     }
 
+    /// True if there is something to show in the right panel.
+    pub fn has_right_panel(&self) -> bool {
+        self.editor_alive || self.md_viewer.is_some()
+    }
+
+    /// Open the selected file: markdown goes to the viewer, everything else to vim.
+    fn open_file_path(&mut self, path: PathBuf) {
+        if md::is_markdown(&path) {
+            match MdViewer::load(&path) {
+                Ok(v) => {
+                    self.md_viewer = Some(v);
+                    self.status_message = None;
+                }
+                Err(e) => self.status_message = Some(format!("md: {}", e)),
+            }
+        } else {
+            self.open_in_editor = Some(path);
+        }
+    }
+
     /// Process an action and update state.
     pub fn update(&mut self, action: Action) {
         match action {
@@ -134,7 +168,8 @@ impl App {
                         self.mode = Mode::Normal;
                         self.load_directory();
                     } else {
-                        self.open_in_editor = Some(entry.path.clone());
+                        let path = entry.path.clone();
+                        self.open_file_path(path);
                     }
                 }
             }
@@ -146,7 +181,8 @@ impl App {
                         self.selected_path = Some(entry.path.clone());
                         self.should_quit = true;
                     } else {
-                        self.open_in_editor = Some(entry.path.clone());
+                        let path = entry.path.clone();
+                        self.open_file_path(path);
                     }
                 }
             }
@@ -212,7 +248,6 @@ impl App {
 
             Action::SearchConfirm => {
                 self.mode = Mode::Normal;
-                // Keep the filter active
             }
 
             Action::SearchCancel => {
@@ -222,12 +257,88 @@ impl App {
                 self.cursor = 0;
             }
 
+            Action::MdScrollDown => {
+                if let Some(v) = self.md_viewer.as_mut() {
+                    v.scroll_down(1);
+                }
+            }
+
+            Action::MdScrollUp => {
+                if let Some(v) = self.md_viewer.as_mut() {
+                    v.scroll_up(1);
+                }
+            }
+
+            Action::MdPageDown => {
+                if let Some(v) = self.md_viewer.as_mut() {
+                    v.scroll_down(10);
+                }
+            }
+
+            Action::MdPageUp => {
+                if let Some(v) = self.md_viewer.as_mut() {
+                    v.scroll_up(10);
+                }
+            }
+
+            Action::MdTop => {
+                if let Some(v) = self.md_viewer.as_mut() {
+                    v.scroll_top();
+                }
+            }
+
+            Action::MdBottom => {
+                if let Some(v) = self.md_viewer.as_mut() {
+                    v.scroll_bottom();
+                }
+            }
+
+            Action::MdEdit => {
+                if let Some(v) = self.md_viewer.as_ref() {
+                    self.open_in_editor = Some(v.path.clone());
+                }
+            }
+
+            Action::CloseRight => {
+                self.md_viewer = None;
+                if self.focus == Focus::Right {
+                    self.focus = Focus::Left;
+                }
+            }
+
+            Action::ResizeShrink => self.resize_focused(-(RESIZE_STEP as i16)),
+            Action::ResizeGrow => self.resize_focused(RESIZE_STEP as i16),
+
             Action::None => {}
         }
     }
 
+    /// Apply `delta` percent to the panel whose size belongs to the current focus.
+    /// Constraints keep each panel within reasonable bounds and the list panel
+    /// from collapsing below `LIST_PCT_MIN`.
+    fn resize_focused(&mut self, delta: i16) {
+        let right_active = self.has_right_panel();
+        match self.focus {
+            Focus::Left => {
+                let new = clamp_pct(self.tree_pct, delta, TREE_PCT_MIN, TREE_PCT_MAX);
+                let right = if right_active { self.right_pct } else { 0 };
+                if 100u16.saturating_sub(new).saturating_sub(right) >= LIST_PCT_MIN {
+                    self.tree_pct = new;
+                }
+            }
+            Focus::Right => {
+                if !right_active {
+                    return;
+                }
+                let new = clamp_pct(self.right_pct, delta, RIGHT_PCT_MIN, RIGHT_PCT_MAX);
+                if 100u16.saturating_sub(self.tree_pct).saturating_sub(new) >= LIST_PCT_MIN {
+                    self.right_pct = new;
+                }
+            }
+        }
+    }
+
     /// Get the currently selected entry, if any.
-    #[allow(dead_code)]
     pub fn selected_entry(&self) -> Option<&FileEntry> {
         self.visible
             .get(self.cursor)
@@ -263,5 +374,82 @@ impl App {
             }
         }
         path
+    }
+}
+
+fn clamp_pct(current: u16, delta: i16, min: u16, max: u16) -> u16 {
+    let signed = current as i32 + delta as i32;
+    signed.clamp(min as i32, max as i32) as u16
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn app() -> App {
+        App {
+            current_dir: PathBuf::from("/"),
+            entries: Vec::new(),
+            visible: Vec::new(),
+            cursor: 0,
+            mode: Mode::Normal,
+            search_query: String::new(),
+            show_hidden: true,
+            status_message: None,
+            should_quit: false,
+            selected_path: None,
+            open_in_editor: None,
+            focus: Focus::Left,
+            editor_alive: false,
+            tree: Vec::new(),
+            md_viewer: None,
+            tree_pct: 25,
+            right_pct: 40,
+        }
+    }
+
+    #[test]
+    fn resize_left_focus_grows_tree() {
+        let mut a = app();
+        a.update(Action::ResizeGrow);
+        assert_eq!(a.tree_pct, 30);
+    }
+
+    #[test]
+    fn resize_left_focus_shrinks_tree_to_minimum() {
+        let mut a = app();
+        for _ in 0..20 {
+            a.update(Action::ResizeShrink);
+        }
+        assert_eq!(a.tree_pct, TREE_PCT_MIN);
+    }
+
+    #[test]
+    fn resize_right_focus_requires_active_right_panel() {
+        let mut a = app();
+        a.focus = Focus::Right;
+        a.update(Action::ResizeGrow);
+        assert_eq!(a.right_pct, 40, "no right panel, right_pct must not change");
+    }
+
+    #[test]
+    fn resize_right_focus_grows_right_when_active() {
+        let mut a = app();
+        a.editor_alive = true;
+        a.focus = Focus::Right;
+        a.update(Action::ResizeGrow);
+        assert_eq!(a.right_pct, 45);
+    }
+
+    #[test]
+    fn resize_right_panel_caps_to_keep_list_visible() {
+        let mut a = app();
+        a.editor_alive = true;
+        a.focus = Focus::Right;
+        for _ in 0..20 {
+            a.update(Action::ResizeGrow);
+        }
+        assert!(a.right_pct <= RIGHT_PCT_MAX);
+        assert!(100 - a.tree_pct - a.right_pct >= LIST_PCT_MIN);
     }
 }

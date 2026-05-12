@@ -2,6 +2,7 @@ mod app;
 mod editor;
 mod fuzzy;
 mod input;
+mod md;
 mod nav;
 mod theme;
 mod tree;
@@ -21,8 +22,8 @@ use ratatui::Terminal;
 
 use app::{App, Focus};
 use editor::{key_to_bytes, Editor};
-use input::handle_key;
-use ui::editor_panel_size;
+use input::{handle_key, handle_md_viewer_key, resize_action};
+use ui::right_panel_size;
 
 fn main() -> io::Result<()> {
     let start_dir = env::args()
@@ -69,13 +70,16 @@ fn run(
         // Keep the pty in sync with the right panel size.
         let term_area = terminal.size()?;
         let term_rect = ratatui::layout::Rect::new(0, 0, term_area.width, term_area.height);
-        let (panel_cols, panel_rows) = editor_panel_size(term_rect);
+        let (panel_cols, panel_rows) = right_panel_size(term_rect, app.right_pct);
         if let Some(ed) = editor.as_mut() {
             let _ = ed.resize(panel_rows.max(1), panel_cols.max(1));
         }
 
-        // Service any pending "open file" request from the left panel.
+        // Service any pending "open file" request from the left panel or the
+        // markdown viewer's edit-switch.
         if let Some(path) = app.open_in_editor.take() {
+            // Editor and viewer are mutually exclusive in the right panel.
+            app.md_viewer = None;
             match editor.as_mut() {
                 Some(ed) => {
                     if let Err(e) = ed.open_file(&path) {
@@ -95,6 +99,14 @@ fn run(
             }
         }
 
+        // If the viewer was just opened, ensure any prior editor session is
+        // closed — the right panel can only host one widget at a time.
+        if app.md_viewer.is_some() && editor.is_some() {
+            editor = None;
+            app.editor_alive = false;
+            app.focus = Focus::Right;
+        }
+
         terminal.draw(|f| ui::draw(f, &app, editor.as_ref()))?;
 
         if event::poll(Duration::from_millis(50))? {
@@ -103,13 +115,19 @@ fn run(
                     && key.code == KeyCode::Char(' ');
 
                 if is_focus_toggle {
-                    app.focus = match (app.focus, app.editor_alive) {
+                    let right_active = app.has_right_panel();
+                    app.focus = match (app.focus, right_active) {
                         (Focus::Right, _) => Focus::Left,
                         (Focus::Left, true) => Focus::Right,
                         (Focus::Left, false) => Focus::Left,
                     };
+                } else if let Some(action) = resize_action(key) {
+                    app.update(action);
                 } else if app.focus == Focus::Right {
-                    if let Some(ed) = editor.as_mut() {
+                    if app.md_viewer.is_some() {
+                        let action = handle_md_viewer_key(key);
+                        app.update(action);
+                    } else if let Some(ed) = editor.as_mut() {
                         let bytes = key_to_bytes(key);
                         if !bytes.is_empty() {
                             let _ = ed.send_bytes(&bytes);

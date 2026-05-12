@@ -1,11 +1,12 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::app::{App, Focus, Mode};
 use crate::editor::Editor;
+use crate::md::{self, MdViewer};
 use crate::nav;
 use crate::theme;
 use crate::tree;
@@ -16,10 +17,6 @@ const METADATA_HEIGHT: u16 = 3;
 const FOOTER_HEIGHT: u16 = 3;
 const CHROME_HEIGHT: u16 =
     HEADER_HEIGHT + COLUMN_HEADER_HEIGHT + METADATA_HEIGHT + FOOTER_HEIGHT;
-
-const TREE_PCT: u16 = 25;
-const LIST_PCT_WITH_VIM: u16 = 35;
-const VIM_PCT: u16 = 40;
 
 const ICON_TOP: &str = "▄███▄";
 const ICON_MID: &str = "█▒▒▒█";
@@ -52,24 +49,36 @@ pub fn draw(f: &mut Frame, app: &App, editor: Option<&Editor>) {
     draw_column_headers(f, chunks[1]);
 
     let main_area = chunks[2];
-    if let Some(ed) = editor {
+    let right_active = editor.is_some() || app.md_viewer.is_some();
+
+    if right_active {
+        let tree_pct = app.tree_pct;
+        let right_pct = app.right_pct;
+        let list_pct = 100u16.saturating_sub(tree_pct).saturating_sub(right_pct);
         let split = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Percentage(TREE_PCT),
-                Constraint::Percentage(LIST_PCT_WITH_VIM),
-                Constraint::Percentage(VIM_PCT),
+                Constraint::Percentage(tree_pct),
+                Constraint::Percentage(list_pct),
+                Constraint::Percentage(right_pct),
             ])
             .split(main_area);
         draw_tree(f, app, split[0]);
         draw_file_list(f, app, split[1]);
-        draw_editor_panel(f, ed, split[2], app.focus == Focus::Right);
+        let focused = app.focus == Focus::Right;
+        if let Some(ed) = editor {
+            draw_editor_panel(f, ed, split[2], focused);
+        } else if let Some(v) = &app.md_viewer {
+            draw_md_viewer(f, v, split[2], focused);
+        }
     } else {
+        let tree_pct = app.tree_pct;
+        let list_pct = 100u16.saturating_sub(tree_pct);
         let split = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Percentage(30),
-                Constraint::Percentage(70),
+                Constraint::Percentage(tree_pct),
+                Constraint::Percentage(list_pct),
             ])
             .split(main_area);
         draw_tree(f, app, split[0]);
@@ -80,11 +89,12 @@ pub fn draw(f: &mut Frame, app: &App, editor: Option<&Editor>) {
     draw_footer(f, app, chunks[4]);
 }
 
-/// Compute (cols, rows) for the embedded editor given the full terminal area.
-/// Mirrors the layout split in `draw` so the pty is sized to match the panel.
-pub fn editor_panel_size(area: Rect) -> (u16, u16) {
+/// Compute (cols, rows) for the embedded editor given the full terminal area
+/// and the current `right_pct` from the app. Mirrors the layout split in `draw`
+/// so the pty is sized to match the panel.
+pub fn right_panel_size(area: Rect, right_pct: u16) -> (u16, u16) {
     let main_height = area.height.saturating_sub(CHROME_HEIGHT);
-    let editor_width = area.width.saturating_mul(VIM_PCT) / 100;
+    let editor_width = area.width.saturating_mul(right_pct) / 100;
     (editor_width.saturating_sub(1), main_height)
 }
 
@@ -360,6 +370,40 @@ fn draw_editor_panel(f: &mut Frame, editor: &Editor, area: Rect, focused: bool) 
     }
 }
 
+fn draw_md_viewer(f: &mut Frame, viewer: &MdViewer, area: Rect, focused: bool) {
+    let border_style = if focused {
+        Style::default().fg(theme::PHOSPHOR).bg(theme::BG).add_modifier(Modifier::BOLD)
+    } else {
+        theme::border()
+    };
+    let title_text = viewer
+        .path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| viewer.path.display().to_string());
+    let title = Line::from(vec![
+        Span::styled(" \u{2592} ", theme::text_dim()),
+        Span::styled(title_text, theme::title()),
+        Span::styled("  read-only \u{2014} press <e> to edit ", theme::text_dim()),
+    ]);
+
+    let block = Block::default()
+        .borders(Borders::LEFT | Borders::RIGHT | Borders::TOP)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(border_style)
+        .style(theme::text())
+        .title(title);
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let lines = md::render(&viewer.content);
+    let para = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .scroll((viewer.scroll, 0));
+    f.render_widget(para, inner);
+}
+
 fn cell_style(cell: &vt100::Cell) -> Style {
     let mut style = Style::default()
         .fg(map_fg(cell.fgcolor()))
@@ -422,6 +466,11 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
                         Focus::Left => " [browse]",
                         Focus::Right => " [vim]",
                     }
+                } else if app.md_viewer.is_some() {
+                    match app.focus {
+                        Focus::Left => " [browse]",
+                        Focus::Right => " [view]",
+                    }
                 } else {
                     ""
                 };
@@ -438,18 +487,26 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
                     Span::styled("search ", theme::status()),
                     Span::styled("<.>", theme::key_hint()),
                     Span::styled("hidden ", theme::status()),
+                    Span::styled("<A-h/l>", theme::key_hint()),
+                    Span::styled("resize ", theme::status()),
                     Span::styled("<C-Space>", theme::key_hint()),
                     Span::styled("focus ", theme::status()),
-                    Span::styled("<q>", theme::key_hint()),
-                    Span::styled("quit", theme::status()),
-                    Span::styled(
-                        format!(
-                            "  │ {} dirs, {} files{}{}",
-                            dirs, files, hidden_indicator, focus_indicator
-                        ),
-                        theme::status(),
-                    ),
                 ];
+
+                if app.md_viewer.is_some() && app.focus == Focus::Right {
+                    spans.push(Span::styled("<e>", theme::key_hint()));
+                    spans.push(Span::styled("edit ", theme::status()));
+                }
+
+                spans.push(Span::styled("<q>", theme::key_hint()));
+                spans.push(Span::styled("quit", theme::status()));
+                spans.push(Span::styled(
+                    format!(
+                        "  │ {} dirs, {} files{}{}",
+                        dirs, files, hidden_indicator, focus_indicator
+                    ),
+                    theme::status(),
+                ));
 
                 if !filter_indicator.is_empty() {
                     spans.push(Span::styled(filter_indicator, theme::status()));
