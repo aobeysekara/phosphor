@@ -20,12 +20,23 @@ pub enum Action {
     SearchBackspace,
     SearchConfirm,
     SearchCancel,
+    // Markdown viewer actions
+    MdScrollDown,
+    MdScrollUp,
+    MdPageDown,
+    MdPageUp,
+    MdTop,
+    MdBottom,
+    MdEdit,
+    CloseRight,
+    // Layout actions
+    ResizeShrink,
+    ResizeGrow,
     None,
 }
 
-/// Map a key event to an action based on the current mode.
+/// Map a key event to an action for the file browser.
 pub fn handle_key(key: KeyEvent, mode: &Mode) -> Action {
-    // Ctrl-C always quits
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         return Action::Quit;
     }
@@ -62,5 +73,93 @@ fn handle_search(key: KeyEvent) -> Action {
         KeyCode::Down => Action::MoveDown,
         KeyCode::Char(c) => Action::SearchInput(c),
         _ => Action::None,
+    }
+}
+
+/// Map a key event to an action while the markdown viewer is focused.
+pub fn handle_md_viewer_key(key: KeyEvent) -> Action {
+    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+        return Action::Quit;
+    }
+    match key.code {
+        KeyCode::Char('q') => Action::CloseRight,
+        KeyCode::Esc => Action::CloseRight,
+        KeyCode::Char('e') => Action::MdEdit,
+        KeyCode::Char('j') | KeyCode::Down => Action::MdScrollDown,
+        KeyCode::Char('k') | KeyCode::Up => Action::MdScrollUp,
+        KeyCode::Char('d') | KeyCode::PageDown => Action::MdPageDown,
+        KeyCode::Char('u') | KeyCode::PageUp => Action::MdPageUp,
+        KeyCode::Char(' ') => Action::MdPageDown,
+        KeyCode::Char('g') | KeyCode::Home => Action::MdTop,
+        KeyCode::Char('G') | KeyCode::End => Action::MdBottom,
+        _ => Action::None,
+    }
+}
+
+/// Detect a global resize keybinding (`Alt+H` / `Alt+L`).
+/// Returns the action regardless of focus so panels can be resized while
+/// the editor or viewer has focus.
+pub fn resize_action(key: KeyEvent) -> Option<Action> {
+    if !key.modifiers.contains(KeyModifiers::ALT) {
+        return None;
+    }
+    match key.code {
+        KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Left => Some(Action::ResizeShrink),
+        KeyCode::Char('l') | KeyCode::Char('L') | KeyCode::Right => Some(Action::ResizeGrow),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn k(code: KeyCode, mods: KeyModifiers) -> KeyEvent {
+        KeyEvent::new(code, mods)
+    }
+
+    #[test]
+    fn alt_h_is_resize_shrink() {
+        assert_eq!(
+            resize_action(k(KeyCode::Char('h'), KeyModifiers::ALT)),
+            Some(Action::ResizeShrink),
+        );
+    }
+
+    #[test]
+    fn alt_l_is_resize_grow() {
+        assert_eq!(
+            resize_action(k(KeyCode::Char('l'), KeyModifiers::ALT)),
+            Some(Action::ResizeGrow),
+        );
+    }
+
+    #[test]
+    fn plain_h_is_not_resize() {
+        assert!(resize_action(k(KeyCode::Char('h'), KeyModifiers::NONE)).is_none());
+    }
+
+    #[test]
+    fn viewer_e_switches_to_edit() {
+        assert_eq!(
+            handle_md_viewer_key(k(KeyCode::Char('e'), KeyModifiers::NONE)),
+            Action::MdEdit,
+        );
+    }
+
+    #[test]
+    fn viewer_j_scrolls_down() {
+        assert_eq!(
+            handle_md_viewer_key(k(KeyCode::Char('j'), KeyModifiers::NONE)),
+            Action::MdScrollDown,
+        );
+    }
+
+    #[test]
+    fn viewer_q_closes_right_panel() {
+        assert_eq!(
+            handle_md_viewer_key(k(KeyCode::Char('q'), KeyModifiers::NONE)),
+            Action::CloseRight,
+        );
     }
 }
