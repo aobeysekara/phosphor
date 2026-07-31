@@ -24,6 +24,15 @@ Selecting a file no longer leaves the browser. phosphor spawns vim inside a pseu
 
 ![split-pane vim](screenshots/03-split-vim.png)
 
+## Terminal colour scheme
+
+`phosphor.itermcolors` makes the whole terminal wear phosphor's palette (built
+from `src/theme.rs`: green-black ground, phosphor-green text, orange cursor and
+selection, ANSI slots tinted to match but kept distinguishable).
+
+Install: double-click the file, then iTerm2 -> Settings -> Profiles -> Colors ->
+Color Presets -> phosphor.
+
 ## Installation
 
 Requires Rust (stable). Install via [rustup](https://rustup.rs/).
