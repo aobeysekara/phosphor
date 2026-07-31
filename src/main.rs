@@ -25,7 +25,7 @@ use ratatui::Terminal;
 
 use app::{App, Focus};
 use editor::{key_to_bytes, Editor};
-use input::{handle_key, handle_md_viewer_key, resize_action};
+use input::{global_action, handle_key, handle_md_viewer_key};
 use ui::{main_area, right_panel_size};
 
 fn main() -> io::Result<()> {
@@ -59,8 +59,18 @@ fn run(
 ) -> io::Result<Option<std::path::PathBuf>> {
     let mut app = App::new(start_dir);
     let mut editor: Option<Editor> = None;
+    let mut mouse_capture_on = true;
 
     loop {
+        if app.mouse_capture != mouse_capture_on {
+            if app.mouse_capture {
+                execute!(terminal.backend_mut(), EnableMouseCapture)?;
+            } else {
+                execute!(terminal.backend_mut(), DisableMouseCapture)?;
+            }
+            mouse_capture_on = app.mouse_capture;
+        }
+
         // Detect editor exit and clean up.
         if let Some(ed) = editor.as_mut() {
             if !ed.is_alive() {
@@ -170,7 +180,7 @@ fn handle_key_event(
         return;
     }
 
-    if let Some(action) = resize_action(key) {
+    if let Some(action) = global_action(key) {
         app.update(action);
         return;
     }

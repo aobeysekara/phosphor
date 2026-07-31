@@ -54,6 +54,7 @@ pub struct App {
     pub tree_pct: u16,
     pub right_pct: u16,
     pub drag: Option<Splitter>,
+    pub mouse_capture: bool,
 }
 
 impl App {
@@ -77,6 +78,7 @@ impl App {
             tree_pct: 25,
             right_pct: 40,
             drag: None,
+            mouse_capture: true,
         };
         app.load_directory();
         app
@@ -319,6 +321,11 @@ impl App {
             Action::ResizeShrink => self.resize_focused(-(RESIZE_STEP as i16)),
             Action::ResizeGrow => self.resize_focused(RESIZE_STEP as i16),
 
+            Action::ToggleMouseCapture => {
+                self.mouse_capture = !self.mouse_capture;
+                self.drag = None;
+            }
+
             Action::None => {}
         }
     }
@@ -497,6 +504,7 @@ mod tests {
             tree_pct: 25,
             right_pct: 40,
             drag: None,
+            mouse_capture: true,
         }
     }
 
@@ -634,5 +642,17 @@ mod tests {
         a.update_drag(80, main_area());
         assert_eq!(a.tree_pct, 25);
         assert_eq!(a.right_pct, 40);
+    }
+
+    #[test]
+    fn toggle_mouse_capture_flips_and_clears_drag() {
+        let mut a = app();
+        a.start_drag(25, 10, main_area());
+        assert!(a.drag.is_some());
+        a.update(Action::ToggleMouseCapture);
+        assert!(!a.mouse_capture);
+        assert!(a.drag.is_none());
+        a.update(Action::ToggleMouseCapture);
+        assert!(a.mouse_capture);
     }
 }

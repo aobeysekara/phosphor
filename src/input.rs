@@ -32,6 +32,7 @@ pub enum Action {
     // Layout actions
     ResizeShrink,
     ResizeGrow,
+    ToggleMouseCapture,
     None,
 }
 
@@ -96,16 +97,16 @@ pub fn handle_md_viewer_key(key: KeyEvent) -> Action {
     }
 }
 
-/// Detect a global resize keybinding (`Alt+H` / `Alt+L`).
-/// Returns the action regardless of focus so panels can be resized while
-/// the editor or viewer has focus.
-pub fn resize_action(key: KeyEvent) -> Option<Action> {
+/// Detect a global keybinding (Alt-modified) regardless of focus. Currently
+/// covers panel resize (`Alt+H/L`) and the mouse-capture toggle (`Alt+M`).
+pub fn global_action(key: KeyEvent) -> Option<Action> {
     if !key.modifiers.contains(KeyModifiers::ALT) {
         return None;
     }
     match key.code {
         KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Left => Some(Action::ResizeShrink),
         KeyCode::Char('l') | KeyCode::Char('L') | KeyCode::Right => Some(Action::ResizeGrow),
+        KeyCode::Char('m') | KeyCode::Char('M') => Some(Action::ToggleMouseCapture),
         _ => None,
     }
 }
@@ -121,7 +122,7 @@ mod tests {
     #[test]
     fn alt_h_is_resize_shrink() {
         assert_eq!(
-            resize_action(k(KeyCode::Char('h'), KeyModifiers::ALT)),
+            global_action(k(KeyCode::Char('h'), KeyModifiers::ALT)),
             Some(Action::ResizeShrink),
         );
     }
@@ -129,14 +130,22 @@ mod tests {
     #[test]
     fn alt_l_is_resize_grow() {
         assert_eq!(
-            resize_action(k(KeyCode::Char('l'), KeyModifiers::ALT)),
+            global_action(k(KeyCode::Char('l'), KeyModifiers::ALT)),
             Some(Action::ResizeGrow),
         );
     }
 
     #[test]
-    fn plain_h_is_not_resize() {
-        assert!(resize_action(k(KeyCode::Char('h'), KeyModifiers::NONE)).is_none());
+    fn alt_m_toggles_mouse_capture() {
+        assert_eq!(
+            global_action(k(KeyCode::Char('m'), KeyModifiers::ALT)),
+            Some(Action::ToggleMouseCapture),
+        );
+    }
+
+    #[test]
+    fn plain_h_is_not_global() {
+        assert!(global_action(k(KeyCode::Char('h'), KeyModifiers::NONE)).is_none());
     }
 
     #[test]

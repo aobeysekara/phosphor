@@ -502,6 +502,11 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
                     Span::styled("resize (or drag border) ", theme::status()),
                     Span::styled("<C-Space>", theme::key_hint()),
                     Span::styled("focus ", theme::status()),
+                    Span::styled("<A-m>", theme::key_hint()),
+                    Span::styled(
+                        if app.mouse_capture { "mouse:on " } else { "mouse:off " },
+                        theme::status(),
+                    ),
                 ];
 
                 if app.md_viewer.is_some() && app.focus == Focus::Right {
